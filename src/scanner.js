@@ -242,6 +242,7 @@ function describeTask(args) {
   }
 
   if (!runtimeOf(tokens[0] || '')) return first;
+  if (tokens.some((t) => t === '-e' || t === '--eval' || t === '-p' || t === '--print')) return `${first} -e (inline script)`;
 
   // node [flags] [--import tsx] script.ts
   let loader = null;
@@ -257,6 +258,31 @@ function describeTask(args) {
     return [loader, shortScript(t)].filter(Boolean).join(' ');
   }
   return loader || first;
+}
+
+// --- Plain-English kinds -----------------------------------------------------
+
+// First match wins. Tested against the full command lines of every member.
+const KINDS = [
+  { kind: 'tests', title: 'Tests', re: /\b(vitest|jest|mocha|ava|playwright|cypress)\b|\brun test\b/ },
+  { kind: 'typecheck', title: 'Type check', re: /\b(tsc|vue-tsc|tsgo)\b(?!-)|typecheck|type-check/ },
+  { kind: 'mcp', title: 'MCP server', re: /\bmcp\b|mcp-server|modelcontextprotocol|server-[a-z]+-mcp/i },
+  { kind: 'language-server', title: 'Language server', re: /tsserver|language-?server|languageserver|eslintServer/i },
+  { kind: 'build', title: 'Build', re: /\b(next|vite|nuxt|astro|remix|turbo|tsup|rollup|webpack|esbuild|parcel)\b\S*\s+build\b|\brun build\b|\btsup\b|\brollup\b/ },
+  { kind: 'dev-server', title: 'Dev server', re: /\b(next dev|next-server|vite|nuxt dev|astro dev|remix dev|webpack serve|expo start|metro|wrangler dev|storybook|run dev\b|run start\b)/ },
+  { kind: 'lint', title: 'Lint', re: /\b(eslint|biome|prettier|oxlint|stylelint)\b/ },
+  { kind: 'install', title: 'Installing packages', re: /\b(npm|pnpm|yarn|bun) (install|i|add|ci)\b/ },
+  { kind: 'watcher', title: 'File watcher', re: /\b(nodemon|chokidar|watchman|--watch)\b/ },
+  { kind: 'app', title: 'Electron app', re: /\belectron\b/ },
+  { kind: 'server', title: 'App server', re: /\b(server|api|app)\.[cm]?[jt]s\b|\bstart\b/ },
+];
+
+function describeKind(rootArgs, memberArgs) {
+  const haystacks = [rootArgs, ...memberArgs];
+  for (const k of KINDS) {
+    if (haystacks.some((a) => k.re.test(a))) return { kind: k.kind, title: k.title };
+  }
+  return { kind: 'script', title: 'Script' };
 }
 
 // --- App attribution --------------------------------------------------------
@@ -395,10 +421,14 @@ async function scan(options = {}) {
       ? `${workerTask} (${rootTask})`
       : rootTask || workerTask;
 
+    const { kind, title } = describeKind(root.args, members.map((m) => m.args));
+
     result.push({
       id: root.pid,
       rootPid: root.pid,
       type,
+      kind,
+      title,
       task,
       app: findLaunchingApp(table, root.pid),
       project: projectInfo?.project || null,
@@ -514,6 +544,7 @@ module.exports = {
   isPidAlive,
   // exported for tests
   describeTask,
+  describeKind,
   describeProjectDir,
   looksLikeViteProcess,
 };

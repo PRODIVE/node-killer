@@ -61,3 +61,19 @@ test('scan marks its own process tree as self', async () => {
   const res = await scanner.killGroup(self);
   assert.strictEqual(res[0].step, 'refused');
 });
+
+test('buildTree groups by project then instance, in cores, with heat', () => {
+  const { buildTree, heatOf } = require('../src/snapshot');
+  const g = (rootPid, project, worktree, cpu, extra = {}) => ({
+    rootPid, project, worktree, cpu, title: 'Tests', kind: 'tests', task: 'vitest run', subpath: null, ports: [],
+    app: 'T3 Code', memoryMb: 100, processCount: 1, elapsed: '01:00', command: 'x', projectRoot: '/p', cwd: '/p', isSelf: false, members: [], ...extra,
+  });
+  const tree = buildTree([g(1, 'prodiveos', 'wt-a', 420), g(2, 'prodiveos', null, 30), g(3, 'benos', null, 2), g(4, null, null, 50, { app: 'Claude' })]);
+  assert.deepStrictEqual(tree.map((p) => p.name), ['prodiveos', 'benos', 'Other · Claude']);
+  assert.strictEqual(tree[0].cores, 4.5);
+  assert.strictEqual(tree[0].heat.level, 'hot');
+  assert.deepStrictEqual(tree[0].instances.map((i) => i.label), ['Worktree: wt-a', 'Main checkout']);
+  assert.strictEqual(heatOf(0.02).level, 'idle');
+  assert.strictEqual(heatOf(1).level, 'busy');
+  assert.strictEqual(heatOf(2).level, 'heavy');
+});

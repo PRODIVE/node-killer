@@ -8,4 +8,5 @@ yarn-error.log
 pnpm-debug.log*
 *.dmg
 *.zip
-*.map
+*.mapdev/sample-snapshot.js
+.claude/

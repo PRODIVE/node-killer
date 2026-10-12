@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Node Killer</title>
+    <link rel="stylesheet" href="../src/panel/panel.css" /><style>body{width:440px;height:680px;margin:20px auto;outline:1px solid #ccc}</style>
+  </head>
+  <body>
+    <div class="viz-root">
+      <header class="hero">
+        <div class="hero-main">
+          <div class="hero-figure"><span id="heroCores">–</span><span class="hero-unit">cores busy</span></div>
+          <div class="hero-sub" id="heroSub">Scanning…</div>
+        </div>
+        <div class="hero-side">
+          <span class="pill" id="heroHeat"></span>
+          <button class="icon-btn" id="menuBtn" title="Refresh, preferences, quit" aria-label="Menu">⋯</button>
+        </div>
+      </header>
+
+      <section class="chart-card" aria-labelledby="chartTitle">
+        <div class="chart-head">
+          <h2 id="chartTitle">Cores used, last 10 minutes</h2>
+          <button class="link-btn" id="tableToggle" aria-pressed="false">Table</button>
+        </div>
+        <div class="chart-wrap" id="chartWrap">
+          <svg id="chart" role="img" aria-labelledby="chartTitle"></svg>
+          <div class="tooltip" id="tooltip" hidden></div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <table class="data-table" id="dataTable" hidden></table>
+      </section>
+
+      <div class="heat-key" aria-label="Heat key">
+        <span class="key"><i class="sw heat-idle"></i>Idle</span>
+        <span class="key"><i class="sw heat-light"></i>Light &lt;½</span>
+        <span class="key"><i class="sw heat-busy"></i>Busy &lt;1½</span>
+        <span class="key"><i class="sw heat-heavy"></i>Heavy &lt;3</span>
+        <span class="key"><i class="sw heat-hot"></i>Hot 3+ cores</span>
+      </div>
+
+      <main id="projects" class="projects"></main>
+
+      <div class="idle-toggle-row">
+        <button class="link-btn" id="idleToggle"></button>
+      </div>
+    </div>
+    <script src="sample-snapshot.js"></script><script src="mock-api.js"></script><script src="../src/panel/panel.js"></script>
+  </body>
+</html>

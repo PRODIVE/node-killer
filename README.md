@@ -25,7 +25,9 @@
 - **Finds every Node/Bun/Deno process**, not just ones listening on a port — test runners, `tsc --watch`, language servers and MCP servers included.
 - **Groups workers under the command that started them** (e.g. `npm run test` → `vitest run` + 8 workers is one entry) and totals their CPU and memory.
 - **Labels each group** with the launching app (Terminal, VS Code, Claude Code, T3 Code, launchd…), the project, git worktree and sub-folder, and listening ports.
-- The menu bar shows `groups · total CPU`, and the list is sorted by CPU. Each entry's submenu lets you kill the whole group or one worker, reveal its folder, or copy its command.
+- **Measured in cores, not percent**: "4.2 cores busy of 10". The menu bar shows a heat dot plus cores (🟢 light · 🟡 busy · 🟠 heavy · 🔴 hot).
+- **Click the menu bar item to open a panel** with a 10-minute stacked chart of cores by project (hover for values, or switch to the table), then project → instance (main checkout / worktree) → task cards. Tasks are named in plain English (Tests, Type check, Dev server, MCP server…) and colour-coded by load. Each task shows its processes when expanded and has a two-step Kill. Right-click the menu bar item for Refresh, Kill everything, Preferences and Quit.
+- To preview the panel in a browser, run `npm run panel:sample`, then serve the repo (e.g. `python3 -m http.server`) and open `dev/panel-harness.html`. `NODEKILLER_OPEN_PANEL=1 npm run dev` opens the panel on launch.
 
 ### MCP server
 

@@ -22,7 +22,8 @@
     "dev": "electron .",
     "build": "electron-builder -m",
     "test": "node --test test/scanner.test.js",
-    "mcp": "node src/mcp-server.js"
+    "mcp": "node src/mcp-server.js",
+    "panel:sample": "node dev/make-sample.js"
   },
   "devDependencies": {
     "electron": "^38.1.0",

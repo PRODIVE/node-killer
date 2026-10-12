@@ -127,6 +127,31 @@ function setProcessType(typeName, enabled) {
   return setProcessTypes(current);
 }
 
+const COLOR_SLOT_COUNT = 8;
+
+// Each project keeps the colour it was first given, so the chart never repaints a project.
+function getColorSlots() {
+  const stored = store.get('colorSlots');
+  return stored && typeof stored === 'object' ? stored : {};
+}
+
+function assignColorSlots(projectKeys) {
+  const slots = getColorSlots();
+  const used = new Set(Object.values(slots));
+  let changed = false;
+  for (const key of projectKeys) {
+    if (key in slots) continue;
+    let slot = 0;
+    while (used.has(slot) && slot < COLOR_SLOT_COUNT) slot++;
+    if (slot >= COLOR_SLOT_COUNT) continue; // past 8 projects: shown in neutral "Other" grey
+    slots[key] = slot;
+    used.add(slot);
+    changed = true;
+  }
+  if (changed) store.set('colorSlots', slots);
+  return slots;
+}
+
 function getAllPreferences() {
   return {
     autoLaunch: getAutoLaunch(),
@@ -154,4 +179,6 @@ module.exports = {
   setProcessTypes,
   setProcessType,
   getAllPreferences,
+  getColorSlots,
+  assignColorSlots,
 };
