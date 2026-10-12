@@ -20,6 +20,31 @@
 - ✅ **Process type toggles** — enable or disable Node.js, Vite, and Bun scanning directly from Preferences.
 
 
+## 🏷️ Labelled processes + MCP server (fork additions)
+
+- **Finds every Node/Bun/Deno process**, not just ones listening on a port — test runners, `tsc --watch`, language servers and MCP servers included.
+- **Groups workers under the command that started them** (e.g. `npm run test` → `vitest run` + 8 workers is one entry) and totals their CPU and memory.
+- **Labels each group** with the launching app (Terminal, VS Code, Claude Code, T3 Code, launchd…), the project, git worktree and sub-folder, and listening ports.
+- The menu bar shows `groups · total CPU`, and the list is sorted by CPU. Each entry's submenu lets you kill the whole group or one worker, reveal its folder, or copy its command.
+
+### MCP server
+
+`src/mcp-server.js` is a stdio MCP server that uses the same scanner. Its tools:
+
+| Tool | What it does |
+|---|---|
+| `list_processes` | Groups sorted by CPU; filter with `min_cpu` / `query` (matches app, project, worktree, task) |
+| `get_process_group` | Every member of a group, with per-process CPU and command line |
+| `kill_process_group` | SIGTERM → SIGKILL a whole group (or `only_this_pid`). It refuses to kill the agent calling it. |
+
+Register it with Claude Code:
+
+```bash
+claude mcp add --scope user node-killer -- node /absolute/path/to/node-killer/src/mcp-server.js
+```
+
+Run the tests with `npm test`.
+
 ## 🚀 Getting Started
 
 For development:

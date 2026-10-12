@@ -1,55 +1,18 @@
-const { app, Menu, Tray, nativeImage, Notification, dialog, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, Menu, Tray, nativeImage, Notification, dialog, BrowserWindow, ipcMain, shell, clipboard } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFile, exec } = require('child_process');
-const { promisify } = require('util');
 const prefs = require('./prefs');
+const scanner = require('./scanner');
 const { REFRESH_CHOICES, DEFAULT_REFRESH_MS } = prefs;
-
-const execAsync = promisify(exec);
 
 /**
  * ⚡️ Node Killer: a minimal macOS menubar app that hunts down and kills your stray Node.js processes.
+ * Processes are grouped by the command that started them and labelled with app + project (see scanner.js).
  */
 
-const VITE_PATTERN = /(?:^|[=\/@\s"'`])vite(?:\.js)?(?=$|[\s"'`/:@])/;
+const MENU_TOP_GROUPS = 15;
 
-function looksLikeViteProcess(commandLine = '') {
-  if (!commandLine) return false;
-  const normalized = commandLine.toLowerCase().replace(/\\/g, '/');
-  return VITE_PATTERN.test(normalized);
-}
-
-// Process type configuration
-const PROCESS_TYPES = {
-  node: {
-    label: 'node',
-    lsofCommand: 'node',
-    classify: (commandLine) => {
-      // If it contains vite, classify as vite instead
-      if (looksLikeViteProcess(commandLine)) {
-        return null;
-      }
-      return 'node';
-    }
-  },
-  vite: {
-    label: 'vite',
-    lsofCommand: 'node', // Vite runs as node process
-    classify: (commandLine) => {
-      if (looksLikeViteProcess(commandLine)) {
-        return 'vite';
-      }
-      return null;
-    }
-  },
-  bun: {
-    label: 'bun',
-    lsofCommand: 'bun',
-    classify: () => 'bun'
-  }
-};
 
 let tray = null;
 let refreshTimeout = null;
@@ -139,274 +102,92 @@ function notify(title, body) {
   }
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isPidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    // ESRCH: no such process; EPERM: no permission but exists
-    if (err && (err.code === 'EPERM')) return true; // alive but unauthorized
-    return false;
-  }
-}
-
-async function killPid(pid) {
-  // Try SIGTERM then SIGKILL
-  try {
-    process.kill(pid, 'SIGTERM');
-  } catch (err) {
-    return { pid, ok: false, step: 'SIGTERM', error: err.message || String(err) };
-  }
-
-  await sleep(500);
-  if (!isPidAlive(pid)) {
-    return { pid, ok: true, step: 'SIGTERM' };
-  }
-
-  try {
-    process.kill(pid, 'SIGKILL');
-  } catch (err) {
-    return { pid, ok: false, step: 'SIGKILL', error: err.message || String(err) };
-  }
-
-  await sleep(300);
-  if (!isPidAlive(pid)) {
-    return { pid, ok: true, step: 'SIGKILL' };
-  }
-
-  return { pid, ok: false, step: 'SIGKILL', error: 'Process still alive after SIGKILL' };
-}
-
-function parseLsofOutputHuman(stdout, processCommand) {
-  const lines = stdout.split(/\r?\n/);
-  const processes = new Map(); // pid -> { pid, ports: Set<number>, user, command }
-
-  for (const line of lines) {
-    if (!line || line.startsWith('COMMAND') || !/LISTEN/.test(line)) continue;
-
-    const compact = line.trim().replace(/\s+/g, ' ');
-    const parts = compact.split(' ');
-    if (parts.length < 2) continue;
-
-    const command = parts[0];
-    const pidNum = Number(parts[1]);
-    const user = parts[2] || '';
-
-    // Keep processes based on the command filter
-    if (processCommand === 'node') {
-      if (!(command === 'node' || /\bnode(js)?\b/.test(command))) continue;
-    } else if (processCommand === 'bun') {
-      if (!(command === 'bun' || /\bbun\b/.test(command))) continue;
-    }
-    if (!Number.isFinite(pidNum)) continue;
-
-    // Extract port(s)
-    const m = line.match(/TCP [^\s]*:(\d+) \(LISTEN\)/);
-    const port = m ? Number(m[1]) : null;
-
-    if (!processes.has(pidNum)) {
-      processes.set(pidNum, { pid: pidNum, user, ports: new Set(), command: processCommand });
-    }
-    if (port) processes.get(pidNum).ports.add(port);
-  }
-
-  return Array.from(processes.values()).map((p) => ({
-    pid: p.pid,
-    user: p.user,
-    ports: Array.from(p.ports).sort((a, b) => a - b),
-    command: p.command,
-  }));
-}
-
-function parseLsofOutputFields(stdout, processCommand) {
-  // Parse output from: lsof -F pcPn ...
-  const processes = new Map(); // pid -> { pid, ports: Set<number>, user?: string, command }
-  let currentPid = null;
-  const lines = stdout.split(/\r?\n/);
-  for (const line of lines) {
-    if (!line) continue;
-    const key = line[0];
-    const val = line.slice(1);
-    if (key === 'p') {
-      const pid = Number(val);
-      if (!Number.isFinite(pid)) { currentPid = null; continue; }
-      currentPid = pid;
-      if (!processes.has(pid)) processes.set(pid, { pid, ports: new Set(), command: processCommand });
-    } else if (key === 'n') {
-      // e.g., "TCP *:3000 (LISTEN)" or "TCP 127.0.0.1:5173 (LISTEN)"
-      const m = val.match(/:(\d+)\s*\(LISTEN\)/);
-      const port = m ? Number(m[1]) : null;
-      if (currentPid && port) {
-        processes.get(currentPid).ports.add(port);
-      }
-    }
-  }
-  return Array.from(processes.values()).map((p) => ({
-    pid: p.pid,
-    ports: Array.from(p.ports).sort((a, b) => a - b),
-    command: p.command,
-  }));
-}
-
-function isNoProcessError(error) {
-  return Boolean(error && (error.code === 1 || error.code === '1'));
-}
-
-// Helper function to classify process type based on command line
-async function classifyProcess(pid, lsofCommand) {
-  try {
-    const { stdout } = await execAsync(`ps -p ${pid} -o command=`);
-    const commandLine = stdout.trim();
-
-    // Try to classify based on each enabled process type
-    for (const [typeName, typeConfig] of Object.entries(PROCESS_TYPES)) {
-      if (typeConfig.lsofCommand === lsofCommand) {
-        const classification = typeConfig.classify(commandLine);
-        if (classification) {
-          return classification;
-        }
-      }
-    }
-
-    // Default to the lsof command if no classification matches
-    return lsofCommand;
-  } catch (error) {
-    // If we can't get the command line, default to the lsof command
-    return lsofCommand;
-  }
-}
-
-// Scan for a specific process command (node or bun)
-function scanProcessCommand(processCommand) {
-  return new Promise((resolve) => {
-    const user = os.userInfo().username;
-    const allUsers = prefs.getAllUsers();
-    const onlyMine = !allUsers;
-    // Use field format to drastically reduce output size
-    const args = ['-nP', '-iTCP', '-sTCP:LISTEN', '-a', '-c', processCommand, '-F', 'pcPn'];
-    if (onlyMine) {
-      args.push('-u', user);
-    }
-
-    execFile('lsof', args, { timeout: 4000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
-      if (error) {
-        if (isNoProcessError(error)) {
-          // lsof exit code 1 == no matching processes
-          resolve([]);
-          return;
-        }
-
-        // Fallback to human parse without -F if field mode failed for any reason
-        const humanArgs = ['-nP', '-iTCP', '-sTCP:LISTEN', '-a', '-c', processCommand];
-        if (onlyMine) {
-          humanArgs.push('-u', user);
-        }
-
-        execFile('lsof', humanArgs, { timeout: 3000, maxBuffer: 10 * 1024 * 1024 }, (e2, out2) => {
-          if (e2) {
-            if (isNoProcessError(e2)) {
-              resolve([]);
-              return;
-            }
-            console.debug(`[lsof ${processCommand}] error:`, e2.message || e2);
-            resolve([]);
-            return;
-          }
-          try {
-            resolve(parseLsofOutputHuman(out2 || '', processCommand));
-          } catch (e) {
-            console.error(`[parseLsofOutputHuman ${processCommand}] failed:`, e);
-            resolve([]);
-          }
-        });
-        return;
-      }
-      try {
-        const results = parseLsofOutputFields(stdout || '', processCommand);
-        resolve(results);
-      } catch (e) {
-        console.error(`[parseLsofOutputFields ${processCommand}] failed:`, e);
-        resolve([]);
-      }
-    });
+async function scanProcessListeners() {
+  return scanner.scan({
+    allUsers: prefs.getAllUsers(),
+    types: prefs.getProcessTypes(),
   });
 }
 
-// Main function to scan for all enabled process types
-async function scanProcessListeners() {
-  const enabledTypes = prefs.getProcessTypes();
-  const allProcesses = [];
-  const seenPids = new Set();
+function formatCpu(cpu) {
+  return `${Math.round(cpu)}%`;
+}
 
-  // Determine which lsof commands we need to run
-  const lsofCommands = new Set();
-  for (const [typeName, enabled] of Object.entries(enabledTypes)) {
-    if (enabled && PROCESS_TYPES[typeName]) {
-      lsofCommands.add(PROCESS_TYPES[typeName].lsofCommand);
-    }
+function groupLabel(g) {
+  const ports = g.ports.length ? ` :${g.ports.join(',')}` : '';
+  const count = g.processCount > 1 ? ` ×${g.processCount}` : '';
+  return `${formatCpu(g.cpu).padStart(5)}  ${g.task}${count} — ${scanner.projectLabel(g)}${ports}  ·  ${g.app}`;
+}
+
+async function killGroupAndReport(g) {
+  const results = await scanner.killGroup(g);
+  const failed = results.filter((r) => !r.ok);
+  const name = `${g.task} — ${scanner.projectLabel(g)}`;
+  if (failed.length === 0) {
+    notify('✅ Terminated', `${name} (${results.length} process${results.length === 1 ? '' : 'es'})`);
+  } else {
+    notify('❌ Could not terminate', `${name} — ${failed.map((r) => `${r.pid} ${r.step} ${r.error || ''}`).join(', ')}`);
   }
+  return failed.length === 0;
+}
 
-  // Run lsof for each unique command
-  for (const lsofCommand of lsofCommands) {
-    const processes = await scanProcessCommand(lsofCommand);
-
-    // Classify and add processes
-    for (const process of processes) {
-      // Skip if we've already seen this PID (deduplication)
-      if (seenPids.has(process.pid)) continue;
-      seenPids.add(process.pid);
-
-      // Classify the process type
-      const processType = await classifyProcess(process.pid, lsofCommand);
-
-      // Only include if this type is enabled
-      if (enabledTypes[processType]) {
-        allProcesses.push({
-          ...process,
-          type: processType
-        });
-      }
-    }
+function groupMenuItem(g) {
+  const info = (label) => ({ label, enabled: false });
+  const submenu = [
+    info(`App: ${g.app}`),
+    info(`Project: ${scanner.projectLabel(g)}${g.package ? ` (${g.package})` : ''}`),
+    info(`CPU ${formatCpu(g.cpu)} · ${g.memoryMb} MB · up ${g.elapsed}`),
+  ];
+  if (g.ports.length) submenu.push(info(`Ports: ${g.ports.join(', ')}`));
+  submenu.push({ type: 'separator' });
+  submenu.push({
+    label: g.processCount > 1 ? `Kill all ${g.processCount} processes` : `Kill (PID ${g.rootPid})`,
+    enabled: !g.isSelf,
+    click: async () => {
+      await killGroupAndReport(g);
+      await performRefresh();
+      scheduleNextRefresh();
+    },
+  });
+  if (g.processCount > 1) {
+    submenu.push({
+      label: 'Kill one…',
+      submenu: g.members.map((m) => ({
+        label: `${formatCpu(m.cpu).padStart(5)}  ${m.pid}  ${m.task}`,
+        click: async () => {
+          const [res] = await scanner.killPids([m.pid]);
+          notify(res.ok ? '✅ Process terminated' : '❌ Could not terminate', `PID ${m.pid} (${res.step}) ${res.error || ''}`);
+          await performRefresh();
+          scheduleNextRefresh();
+        },
+      })),
+    });
   }
-
-  return allProcesses;
+  submenu.push({ type: 'separator' });
+  const folder = g.projectRoot || g.cwd;
+  if (folder && folder !== '/') {
+    submenu.push({ label: 'Reveal folder in Finder', click: () => shell.openPath(folder) });
+  }
+  submenu.push({ label: 'Copy command', click: () => clipboard.writeText(g.command) });
+  return { label: groupLabel(g), submenu };
 }
 
 function buildMenuAndUpdate(procs = []) {
   latestProcesses = Array.isArray(procs) ? procs : [];
   const count = latestProcesses.length;
 
-  applyDisplayMode(count);
-  tray?.setToolTip(`Node Killer — active processes: ${count}`);
+  applyDisplayMode(count, totalCpu(latestProcesses));
+  tray?.setToolTip(`Node Killer — ${count} process groups, ${formatCpu(totalCpu(latestProcesses))} CPU`);
 
   const items = [];
 
-  for (const p of latestProcesses) {
-    const ports = Array.isArray(p.ports) ? p.ports : [];
-    let portsLabel = '';
-    if (ports.length === 1) {
-      portsLabel = ` (port ${ports[0]})`;
-    } else if (ports.length > 1) {
-      portsLabel = ` (ports ${ports.join(', ')})`;
-    }
-    const processType = p.type || 'node';
-    items.push({
-      label: `${processType} ${p.pid}${portsLabel}`,
-      click: async () => {
-        const res = await killPid(p.pid);
-        if (res.ok) {
-          notify('✅ Process terminated', `PID ${p.pid} (${res.step})`);
-        } else {
-          notify('❌ Could not terminate', `PID ${p.pid} — ${res.step} — ${res.error || ''}`);
-        }
-        await performRefresh();
-        scheduleNextRefresh();
-      },
-    });
+  const top = latestProcesses.slice(0, MENU_TOP_GROUPS);
+  const rest = latestProcesses.slice(MENU_TOP_GROUPS);
+  items.push({ label: `Total CPU ${formatCpu(totalCpu(latestProcesses))} across ${count} group${count === 1 ? '' : 's'}`, enabled: false });
+  items.push({ type: 'separator' });
+  for (const g of top) items.push(groupMenuItem(g));
+  if (rest.length) {
+    items.push({ label: `${rest.length} more…`, submenu: rest.map(groupMenuItem) });
   }
 
   items.push({ type: 'separator' });
@@ -421,8 +202,8 @@ function buildMenuAndUpdate(procs = []) {
           buttons: ['Cancel', 'Kill all'],
           defaultId: 1,
           cancelId: 0,
-          message: count === 1 ? 'Kill 1 process?' : `Kill ${count} processes?`,
-          detail: 'Each listed process will receive SIGTERM. If it survives, SIGKILL is sent next.',
+          message: count === 1 ? 'Kill 1 process group?' : `Kill ${count} process groups?`,
+          detail: 'Every process in each listed group will receive SIGTERM. If it survives, SIGKILL is sent next.',
         });
         if (response !== 1) {
           return;
@@ -434,13 +215,14 @@ function buildMenuAndUpdate(procs = []) {
       let ok = 0;
       let fail = 0;
       const failed = [];
-      const snapshot = [...latestProcesses];
-      for (const processInfo of snapshot) {
-        const res = await killPid(processInfo.pid);
-        if (res.ok) ok++;
-        else {
-          fail++;
-          failed.push(`${processInfo.pid} (${res.step})`);
+      const snapshot = latestProcesses.filter((g) => !g.isSelf);
+      for (const group of snapshot) {
+        for (const res of await scanner.killGroup(group)) {
+          if (res.ok) ok++;
+          else {
+            fail++;
+            failed.push(`${res.pid} (${res.step})`);
+          }
         }
       }
       if (fail === 0) {
@@ -475,18 +257,22 @@ function rebuildMenuFromCache() {
   buildMenuAndUpdate(latestProcesses);
 }
 
-function applyDisplayMode(count) {
+function totalCpu(groups) {
+  return groups.reduce((sum, g) => sum + g.cpu, 0);
+}
+
+function applyDisplayMode(count, cpu = totalCpu(latestProcesses)) {
   if (!tray) return;
   const mode = prefs.getDisplayMode();
   if (isMac) {
     if (mode === 'number') {
-      tray.setTitle(` active: ${count} `);
+      tray.setTitle(` ${count} · ${formatCpu(cpu)} `);
     } else if (mode === 'icon-plus-number') {
-      tray.setTitle(`⚡️ ${count}`);
+      tray.setTitle(`⚡️ ${count} · ${formatCpu(cpu)}`);
     } else if (mode === 'icon-only') {
       tray.setTitle('');
     } else {
-      tray.setTitle(` active: ${count} `);
+      tray.setTitle(` ${count} · ${formatCpu(cpu)} `);
     }
   }
 

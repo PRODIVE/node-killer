@@ -14,11 +14,15 @@
   },
   "homepage": "https://github.com/adolfoflores/node-killer#readme",
   "dependencies": {
-    "electron-store": "^8.1.0"
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "electron-store": "^8.1.0",
+    "zod": "^4.6.6"
   },
   "scripts": {
     "dev": "electron .",
-    "build": "electron-builder -m"
+    "build": "electron-builder -m",
+    "test": "node --test test/scanner.test.js",
+    "mcp": "node src/mcp-server.js"
   },
   "devDependencies": {
     "electron": "^38.1.0",
@@ -42,5 +46,8 @@
         "zip"
       ]
     }
+  },
+  "bin": {
+    "node-killer-mcp": "src/mcp-server.js"
   }
 }

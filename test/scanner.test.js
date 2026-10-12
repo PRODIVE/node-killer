@@ -1,0 +1,63 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const scanner = require('../src/scanner');
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test('describeTask labels common dev commands', () => {
+  const cases = {
+    '/opt/homebrew/opt/node/bin/node --env-file=/x/.env --import tsx src/server.ts': 'tsx src/server.ts',
+    'node /w/node_modules/.bin/vitest run': 'vitest run',
+    'node --require /w/node_modules/vitest/suppress-warnings.cjs /w/node_modules/vitest/dist/workers/forks.js': 'vitest',
+    'node /p/node_modules/next/dist/bin/next dev --turbo': 'next dev',
+    'npm run test': 'npm run test',
+    'node /srv/app/server.js': 'app/server.js',
+  };
+  for (const [args, expected] of Object.entries(cases)) {
+    assert.strictEqual(scanner.describeTask(args), expected, args);
+  }
+});
+
+test('describeProjectDir finds the repo and subpath', () => {
+  const info = scanner.describeProjectDir(path.join(__dirname, '..', 'src'));
+  assert.strictEqual(info.project, 'node-killer');
+  assert.strictEqual(info.subpath, 'src');
+});
+
+test('scan groups workers under their parent, labels it, and killGroup kills them all', async () => {
+  // Launch via a shell that exits, so the fixture is orphaned rather than grouped under this test runner.
+  const fixture = path.join(__dirname, 'fixture-group.js');
+  const pid = Number(
+    execFileSync('/bin/sh', ['-c', `"${process.execPath}" "${fixture}" >/dev/null 2>&1 & echo $!`], { cwd: path.join(__dirname, '..') })
+      .toString()
+      .trim()
+  );
+  const child = { pid, kill: (sig) => process.kill(pid, sig) };
+  try {
+    await sleep(1500);
+    const groups = await scanner.scan();
+    const group = groups.find((g) => g.rootPid === child.pid);
+    assert.ok(group, 'fixture group found');
+    assert.strictEqual(group.processCount, 3);
+    assert.strictEqual(group.project, 'node-killer');
+    assert.match(group.task, /fixture-group\.js/);
+    assert.ok(group.cpu > 0);
+    assert.strictEqual(group.isSelf, false);
+
+    const results = await scanner.killGroup(group);
+    assert.ok(results.every((r) => r.ok), JSON.stringify(results));
+    for (const m of group.members) assert.strictEqual(scanner.isPidAlive(m.pid), false, `pid ${m.pid} dead`);
+  } finally {
+    try { child.kill('SIGKILL'); } catch (_) {}
+  }
+});
+
+test('scan marks its own process tree as self', async () => {
+  const groups = await scanner.scan();
+  const self = groups.find((g) => g.members.some((m) => m.pid === process.pid));
+  assert.ok(self && self.isSelf);
+  const res = await scanner.killGroup(self);
+  assert.strictEqual(res[0].step, 'refused');
+});
