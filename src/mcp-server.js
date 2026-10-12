@@ -12,6 +12,7 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 const scanner = require('./scanner');
 const { heatOf, toCores, CORES } = require('./snapshot');
+const { readMemory } = require('./memory');
 const pkg = require('../package.json');
 
 const server = new McpServer({ name: 'node-killer', version: pkg.version });
@@ -62,7 +63,7 @@ server.registerTool(
     title: 'List Node/Bun/Deno processes',
     description:
       'List running Node.js, Bun and Deno processes grouped by the command that started them (e.g. one vitest run with 9 workers is one group), ' +
-      'sorted by total CPU. Each group is labelled with the launching app (Terminal, VS Code, Claude, T3 Code, launchd…), ' +
+      'sorted by total CPU (also reports whole-Mac memory and swap; high memory, not CPU, is the usual cause of a frozen UI). Each group is labelled with the launching app (Terminal, VS Code, Claude, T3 Code, launchd…), ' +
       'the project/worktree it belongs to, listening ports, and memory. `cores` is how many CPU cores the group is keeping busy (cpu_percent / 100); compare with machine_cores. Heat: Idle <0.05, Light <0.5, Busy <1.5, Heavy <3, Hot 3+ cores.',
     inputSchema: {
       min_cpu: z.number().optional().describe('Only groups using at least this much CPU (percent of one core).'),
@@ -73,11 +74,19 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async ({ min_cpu, query, limit = 25, all_users = false }) => {
-    const groups = await scanner.scan({ allUsers: all_users });
+    const [groups, memory] = await Promise.all([scanner.scan({ allUsers: all_users }), readMemory().catch(() => null)]);
     const filtered = groups.filter((g) => (min_cpu == null || g.cpu >= min_cpu) && matches(g, query));
     const totalCpu = Math.round(groups.reduce((s, g) => s + g.cpu, 0) * 10) / 10;
     return jsonResult({
       machine_cores: CORES,
+      memory: memory && {
+        used_gb: memory.usedGb,
+        total_gb: memory.totalGb,
+        node_gb: Math.round((groups.reduce((s, g) => s + g.memoryMb, 0) / 1024) * 10) / 10,
+        swap_used_gb: memory.swapUsedGb,
+        pressure: memory.pressure,
+        note: 'Swap used stays high after a crunch; pressure "warn"/"critical" means the Mac is struggling now.',
+      },
       cores_busy: toCores(totalCpu),
       total_cpu_percent: totalCpu,
       total_groups: groups.length,

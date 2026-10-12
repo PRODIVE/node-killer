@@ -127,10 +127,14 @@ class History {
     this.samples = [];
   }
 
-  add(projects, t = Date.now()) {
+  add(projects, t = Date.now(), memory = null) {
     const byProject = {};
-    for (const p of projects) byProject[p.key] = p.cores;
-    this.samples.push({ t, byProject });
+    const memByProject = {};
+    for (const p of projects) {
+      byProject[p.key] = p.cores;
+      memByProject[p.key] = Math.round((p.memoryMb / 1024) * 100) / 100;
+    }
+    this.samples.push({ t, byProject, memByProject, swapOut: memory ? memory.swapOutMbPerSec : 0 });
     const cutoff = t - this.windowMs;
     while (this.samples.length && this.samples[0].t < cutoff) this.samples.shift();
   }
@@ -140,15 +144,17 @@ class History {
   }
 }
 
-function buildSnapshot(groups, history) {
+function buildSnapshot(groups, history, memory = null) {
   const projects = buildTree(groups);
-  if (history) history.add(projects);
+  if (history) history.add(projects, Date.now(), memory);
   const cores = round2(sum(projects, (p) => p.cores));
   return {
     t: Date.now(),
     machineCores: CORES,
     cores,
     heat: heatOf(cores),
+    memory,
+    nodeMemoryGb: Math.round((sum(projects, (p) => p.memoryMb) / 1024) * 10) / 10,
     projects,
     history: history ? history.toJSON() : [],
   };

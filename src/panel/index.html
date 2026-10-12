@@ -9,20 +9,31 @@
   <body>
     <div class="viz-root">
       <header class="hero">
-        <div class="hero-main">
+        <div class="hero-stat">
+          <div class="hero-label">CPU</div>
           <div class="hero-figure"><span id="heroCores">–</span><span class="hero-unit">cores busy</span></div>
           <div class="hero-sub" id="heroSub">Scanning…</div>
-        </div>
-        <div class="hero-side">
           <span class="pill" id="heroHeat"></span>
-          <button class="icon-btn" id="menuBtn" title="Refresh, preferences, quit" aria-label="Menu">⋯</button>
         </div>
+        <div class="hero-stat">
+          <div class="hero-label">Memory</div>
+          <div class="hero-figure"><span id="heroMem">–</span><span class="hero-unit" id="heroMemUnit">GB used</span></div>
+          <div class="hero-sub" id="heroMemSub"></div>
+          <span class="pill" id="heroMemStatus"></span>
+        </div>
+        <button class="icon-btn" id="menuBtn" title="Refresh, preferences, quit" aria-label="Menu">⋯</button>
       </header>
 
       <section class="chart-card" aria-labelledby="chartTitle">
         <div class="chart-head">
           <h2 id="chartTitle">Cores used, last 10 minutes</h2>
-          <button class="link-btn" id="tableToggle" aria-pressed="false">Table</button>
+          <div class="chart-controls">
+            <div class="seg" role="tablist" aria-label="Chart metric">
+              <button role="tab" data-metric="cpu" aria-selected="true">Cores</button>
+              <button role="tab" data-metric="mem" aria-selected="false">Memory</button>
+            </div>
+            <button class="link-btn" id="tableToggle" aria-pressed="false">Table</button>
+          </div>
         </div>
         <div class="chart-wrap" id="chartWrap">
           <svg id="chart" role="img" aria-labelledby="chartTitle"></svg>

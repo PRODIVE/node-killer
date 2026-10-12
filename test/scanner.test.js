@@ -77,3 +77,10 @@ test('buildTree groups by project then instance, in cores, with heat', () => {
   assert.strictEqual(heatOf(1).level, 'busy');
   assert.strictEqual(heatOf(2).level, 'heavy');
 });
+
+test('memory parsers read vm_stat and swapusage', () => {
+  const { parseVmStat, parseSwapUsage } = require('../src/memory');
+  const vm = parseVmStat('Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages active:   100.\nPages wired down:  50.\nPages occupied by compressor:  25.\nSwapouts:  7.\n');
+  assert.deepStrictEqual([vm.pageSize, vm.active, vm.wired, vm.compressor, vm.swapouts], [16384, 100, 50, 25, 7]);
+  assert.deepStrictEqual(parseSwapUsage('total = 10240.00M  used = 9333.19M  free = 906.81M  (encrypted)'), { totalGb: 10, usedGb: 9333.19 / 1024 });
+});

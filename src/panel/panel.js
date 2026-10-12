@@ -13,6 +13,7 @@ const ui = {
   showTable: false,
   snapshot: null,
   hoverIndex: null,
+  metric: 'cpu', // 'cpu' | 'mem'
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -46,6 +47,21 @@ function fmtCores(n) {
   return n.toFixed(2);
 }
 
+function fmtGb(gb) {
+  if (gb >= 10) return gb.toFixed(0);
+  if (gb >= 0.995) return gb.toFixed(1);
+  return gb.toFixed(2);
+}
+
+function fmtMb(mb) {
+  return mb >= 1024 ? `${fmtGb(mb / 1024)} GB` : `${mb} MB`;
+}
+
+const METRICS = {
+  cpu: { field: 'byProject', title: 'Cores used, last 10 minutes', unit: 'cores', fmt: (v) => fmtCores(v) },
+  mem: { field: 'memByProject', title: 'Node memory, last 10 minutes', unit: 'GB', fmt: (v) => fmtGb(v) },
+};
+
 function seriesColor(slot) {
   return slot != null && slot < SLOT_COUNT ? `var(--series-${slot + 1})` : 'var(--series-other)';
 }
@@ -70,15 +86,30 @@ function renderHero(s) {
   const pill = $('#heroHeat');
   pill.className = `pill ${heatClass(s.heat)}`;
   pill.textContent = s.heat.label;
+
+  const m = s.memory;
+  if (!m) return;
+  $('#heroMem').textContent = fmtGb(m.usedGb);
+  $('#heroMemUnit').textContent = `of ${m.totalGb} GB`;
+  const swapping = m.swapOutMbPerSec >= 1 ? ` · writing ${Math.round(m.swapOutMbPerSec)} MB/s to swap` : '';
+  $('#heroMemSub').textContent = `Node uses ${fmtGb(s.nodeMemoryGb)} GB · swap ${fmtGb(m.swapUsedGb)} of ${fmtGb(m.swapTotalGb)} GB${swapping}`;
+  const memPill = $('#heroMemStatus');
+  memPill.className = `pill status-${m.status}`;
+  memPill.textContent = m.status === 'ok' ? 'No pressure' : m.label;
+  memPill.title =
+    m.status === 'ok'
+      ? 'macOS reports normal memory pressure and nothing is being pushed to swap right now.'
+      : 'The Mac is moving memory to disk. Apps stall while this happens, even with spare CPU.';
 }
 
 // --- Chart ------------------------------------------------------------------
 
 function chartSeries(s) {
-  // Pick the projects that used the most CPU over the window; fold the rest into Other.
+  // Pick the projects that used the most over the window; fold the rest into Other.
+  const field = METRICS[ui.metric].field;
   const totals = new Map();
   for (const sample of s.history) {
-    for (const [key, cores] of Object.entries(sample.byProject)) totals.set(key, (totals.get(key) || 0) + cores);
+    for (const [key, cores] of Object.entries(sample[field] || {})) totals.set(key, (totals.get(key) || 0) + cores);
   }
   const byKey = new Map(s.projects.map((p) => [p.key, p]));
   const ranked = [...totals.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
@@ -92,7 +123,7 @@ function chartSeries(s) {
   const rows = s.history.map((sample) => {
     const values = {};
     let other = 0;
-    for (const [key, cores] of Object.entries(sample.byProject)) {
+    for (const [key, cores] of Object.entries(sample[field] || {})) {
       if (topSet.has(key)) values[key] = cores;
       else other += cores;
     }
@@ -123,9 +154,12 @@ function renderChart(s) {
   const now = s.t;
   const t0 = now - 10 * 60 * 1000;
   const totals = rows.map((r) => series.reduce((sum, ser) => sum + (r.values[ser.key] || 0), 0));
+  const metric = METRICS[ui.metric];
+  $('#chartTitle').textContent = metric.title;
+  const capacity = ui.metric === 'cpu' ? s.machineCores : s.memory?.totalGb || 0;
   let yMax = niceMax(Math.max(0.5, ...totals));
-  const showCapacity = yMax >= s.machineCores * 0.6;
-  if (showCapacity) yMax = Math.max(yMax, s.machineCores);
+  const showCapacity = capacity > 0 && yMax >= capacity * 0.6;
+  if (showCapacity) yMax = Math.max(yMax, capacity);
 
   const x = (t) => pad.l + ((t - t0) / (now - t0)) * (width - pad.l - pad.r);
   const y = (v) => height - pad.b - (v / yMax) * (height - pad.t - pad.b);
@@ -145,9 +179,9 @@ function renderChart(s) {
     chart.append(node);
   }
   if (showCapacity) {
-    chart.append(svg('line', { class: 'capacity', x1: pad.l, x2: width - pad.r, y1: y(s.machineCores), y2: y(s.machineCores) }));
-    const cap = svg('text', { class: 'capacity-label', x: width - pad.r, y: y(s.machineCores) - 3, 'text-anchor': 'end' });
-    cap.textContent = `all ${s.machineCores} cores`;
+    chart.append(svg('line', { class: 'capacity', x1: pad.l, x2: width - pad.r, y1: y(capacity), y2: y(capacity) }));
+    const cap = svg('text', { class: 'capacity-label', x: width - pad.r, y: y(capacity) - 3, 'text-anchor': 'end' });
+    cap.textContent = ui.metric === 'cpu' ? `all ${capacity} cores` : `all ${capacity} GB RAM`;
     chart.append(cap);
   }
 
@@ -209,9 +243,9 @@ function showTooltip(series, row, px, width) {
   tip.replaceChildren(
     el('div', { class: 'tt-time' }, when),
     ...items.map((ser) =>
-      el('div', { class: 'tt-row' }, el('i', { class: 'sw', style: `--c:${seriesColor(ser.slot)}` }), ser.name, el('span', { class: 'v' }, fmtCores(row.values[ser.key])))
+      el('div', { class: 'tt-row' }, el('i', { class: 'sw', style: `--c:${seriesColor(ser.slot)}` }), ser.name, el('span', { class: 'v' }, METRICS[ui.metric].fmt(row.values[ser.key])))
     ),
-    el('div', { class: 'tt-row tt-total' }, 'Total', el('span', { class: 'v' }, `${fmtCores(total)} cores`))
+    el('div', { class: 'tt-row tt-total' }, 'Total', el('span', { class: 'v' }, `${METRICS[ui.metric].fmt(total)} ${METRICS[ui.metric].unit}`))
   );
   tip.hidden = false;
   const tipWidth = tip.offsetWidth;
@@ -233,7 +267,7 @@ function renderTable(series, rows) {
   const peak = (key) => Math.max(0, ...rows.map((r) => r.values[key] || 0));
   const last = rows[rows.length - 1];
   table.replaceChildren(
-    el('thead', {}, el('tr', {}, el('th', {}, 'Project'), el('th', { class: 'num' }, 'Now'), el('th', { class: 'num' }, 'Avg'), el('th', { class: 'num' }, 'Peak'))),
+    el('thead', {}, el('tr', {}, el('th', {}, `Project (${METRICS[ui.metric].unit})`), el('th', { class: 'num' }, 'Now'), el('th', { class: 'num' }, 'Avg'), el('th', { class: 'num' }, 'Peak'))),
     el(
       'tbody',
       {},
@@ -242,9 +276,9 @@ function renderTable(series, rows) {
           'tr',
           {},
           el('td', {}, ser.name),
-          el('td', { class: 'num' }, fmtCores(last?.values[ser.key] || 0)),
-          el('td', { class: 'num' }, fmtCores(avg(ser.key))),
-          el('td', { class: 'num' }, fmtCores(peak(ser.key)))
+          el('td', { class: 'num' }, METRICS[ui.metric].fmt(last?.values[ser.key] || 0)),
+          el('td', { class: 'num' }, METRICS[ui.metric].fmt(avg(ser.key))),
+          el('td', { class: 'num' }, METRICS[ui.metric].fmt(peak(ser.key)))
         )
       )
     )
@@ -301,7 +335,7 @@ function renderTask(task, machineCores) {
         },
       },
       el('div', { class: 'task-title' }, task.title, el('span', { class: 'app' }, task.app)),
-      el('div', { class: 'task-detail' }, `${task.detail}${task.processCount > 1 ? ` · ${task.processCount} processes` : ''} · ${task.memoryMb} MB`)
+      el('div', { class: 'task-detail' }, `${task.detail}${task.processCount > 1 ? ` · ${task.processCount} processes` : ''} · ${fmtMb(task.memoryMb)}`)
     ),
     el('div', { class: 'task-load' }, el('span', { class: 'cores' }, fmtCores(task.cores), el('small', {}, ' cores')), loadBar(task.cores, task.heat, machineCores)),
     el('div', { class: 'task-actions' }, killButton(task))
@@ -317,7 +351,7 @@ function renderTask(task, machineCores) {
         el('span', { class: 'pid' }, m.pid),
         el('span', {}, m.task),
         el('span', { class: 'num' }, `${fmtCores(m.cores)} c`),
-        el('span', { class: 'num' }, `${m.memoryMb} MB`)
+        el('span', { class: 'num' }, fmtMb(m.memoryMb))
       )
     ),
     el(
@@ -359,7 +393,7 @@ function renderProject(p, s) {
         { class: 'project-name' },
         p.name,
         ' ',
-        el('span', { class: 'project-meta' }, `${p.taskCount} task${p.taskCount === 1 ? '' : 's'} · ${p.instances.length} instance${p.instances.length === 1 ? '' : 's'}`)
+        el('span', { class: 'project-meta' }, `${p.taskCount} task${p.taskCount === 1 ? '' : 's'} · ${fmtMb(p.memoryMb)}`)
       ),
       el('span', { class: 'cores' }, fmtCores(p.cores), el('small', {}, ' cores')),
       el('span', { class: `pill ${heatClass(p.heat)}` }, p.heat.label)
@@ -414,6 +448,14 @@ $('#tableToggle').addEventListener('click', (e) => {
   render();
 });
 $('#menuBtn').addEventListener('click', () => api.openMenu());
+document.querySelectorAll('.seg [data-metric]').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    ui.metric = btn.dataset.metric;
+    document.querySelectorAll('.seg [data-metric]').forEach((b) => b.setAttribute('aria-selected', String(b === btn)));
+    ui.hoverIndex = null;
+    render();
+  })
+);
 
 api.onSnapshot((snapshot) => {
   ui.snapshot = snapshot;

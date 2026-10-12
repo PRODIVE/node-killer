@@ -71,7 +71,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 
 /* Hero */
-.hero { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.hero { display: grid; grid-template-columns: 1fr 1fr 28px; gap: 12px; align-items: start; margin-bottom: 12px; }
+.hero-stat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.hero-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.hero-stat .pill { margin-top: 4px; }
+#heroMem { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; }
+.status-ok { --dot: var(--heat-light); }
+.status-swapping { --dot: var(--heat-heavy); }
+.status-critical { --dot: var(--heat-hot); }
+.chart-controls { display: flex; align-items: center; gap: 6px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: none; padding: 2px 8px; font-size: 11px; color: var(--text-secondary); }
+.seg button[aria-selected='true'] { background: var(--wash); color: var(--text-primary); font-weight: 600; }
 .hero-figure { display: flex; align-items: baseline; gap: 6px; }
 #heroCores { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; }
 .hero-unit { font-size: 14px; color: var(--text-secondary); }

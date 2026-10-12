@@ -5,6 +5,7 @@ const os = require('os');
 const prefs = require('./prefs');
 const scanner = require('./scanner');
 const { buildSnapshot, History } = require('./snapshot');
+const { readMemory } = require('./memory');
 const { REFRESH_CHOICES, DEFAULT_REFRESH_MS } = prefs;
 
 /**
@@ -249,14 +250,16 @@ async function killEverything() {
   scheduleNextRefresh();
 }
 
-function applySnapshot(groups) {
+function applySnapshot(groups, memory) {
   latestProcesses = Array.isArray(groups) ? groups : [];
-  latestSnapshot = buildSnapshot(latestProcesses, history);
+  latestSnapshot = buildSnapshot(latestProcesses, history, memory);
   prefs.assignColorSlots(latestSnapshot.projects.filter((p) => p.cores >= 0.05).map((p) => p.key));
   applyDisplayMode();
   const active = latestSnapshot.projects.filter((p) => p.heat.level !== 'idle').length;
+  const mem = latestSnapshot.memory;
   tray?.setToolTip(
-    `Node Killer — ${fmtCores(latestSnapshot.cores)} of ${latestSnapshot.machineCores} cores busy, ${active} active project${active === 1 ? '' : 's'}`
+    `Node Killer — ${fmtCores(latestSnapshot.cores)} of ${latestSnapshot.machineCores} cores busy, ${active} active project${active === 1 ? '' : 's'}` +
+      (mem ? `\nMemory ${mem.usedGb} of ${mem.totalGb} GB · ${mem.label}` : '')
   );
   sendSnapshot();
 }
@@ -266,7 +269,9 @@ function applyDisplayMode() {
   const mode = prefs.getDisplayMode();
   const cores = latestSnapshot ? latestSnapshot.cores : 0;
   const dot = latestSnapshot ? HEAT_DOTS[latestSnapshot.heat.level] : '';
-  const figure = `${dot ? `${dot} ` : ''}${fmtCores(cores)}`;
+  const memStatus = latestSnapshot?.memory?.status;
+  const memWarn = memStatus === 'critical' || memStatus === 'swapping' ? ' ⚠️' : '';
+  const figure = `${dot ? `${dot} ` : ''}${fmtCores(cores)}${memWarn}`;
   if (isMac) {
     if (mode === 'icon-plus-number') {
       tray.setTitle(`⚡️ ${figure}`);
@@ -370,8 +375,8 @@ async function performRefresh() {
   }
   refreshInFlight = true;
   try {
-    const groups = await scanProcessListeners();
-    applySnapshot(groups);
+    const [groups, memory] = await Promise.all([scanProcessListeners(), readMemory().catch(() => null)]);
+    applySnapshot(groups, memory);
     return true;
   } catch (e) {
     console.error('Refresh failed:', e);

@@ -26,6 +26,7 @@
 - **Groups workers under the command that started them** (e.g. `npm run test` → `vitest run` + 8 workers is one entry) and totals their CPU and memory.
 - **Labels each group** with the launching app (Terminal, VS Code, Claude Code, T3 Code, launchd…), the project, git worktree and sub-folder, and listening ports.
 - **Measured in cores, not percent**: "4.2 cores busy of 10". The menu bar shows a heat dot plus cores (🟢 light · 🟡 busy · 🟠 heavy · 🔴 hot).
+- **Memory and swap**: the panel shows memory in use, how much of it is Node, swap, and whether macOS is under memory pressure right now. The chart switches between Cores and Memory per project. The menu bar adds ⚠️ while the Mac is swapping. A frozen UI with spare cores is almost always memory, not CPU.
 - **Click the menu bar item to open a panel** with a 10-minute stacked chart of cores by project (hover for values, or switch to the table), then project → instance (main checkout / worktree) → task cards. Tasks are named in plain English (Tests, Type check, Dev server, MCP server…) and colour-coded by load. Each task shows its processes when expanded and has a two-step Kill. Right-click the menu bar item for Refresh, Kill everything, Preferences and Quit.
 - To preview the panel in a browser, run `npm run panel:sample`, then serve the repo (e.g. `python3 -m http.server`) and open `dev/panel-harness.html`. `NODEKILLER_OPEN_PANEL=1 npm run dev` opens the panel on launch.
 
