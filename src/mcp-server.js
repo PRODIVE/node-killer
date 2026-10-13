@@ -148,6 +148,30 @@ server.registerTool(
   }
 );
 
+server.registerTool(
+  'pause_process_group',
+  {
+    title: 'Pause or resume a process group',
+    description:
+      'Pause (SIGSTOP) or resume (SIGCONT) the whole group containing a pid. A paused group stops using CPU but keeps its memory, ' +
+      'and anything waiting on it (an agent running tests, a browser on a dev server) waits too until it is resumed. ' +
+      'Use kill_process_group instead to free memory.',
+    inputSchema: {
+      pid: z.number().int().describe('Any pid in the group.'),
+      paused: z.boolean().describe('true to pause, false to resume.'),
+    },
+  },
+  async ({ pid, paused }) => {
+    const groups = await scanner.scan({ allUsers: false });
+    const group = findGroupForPid(groups, pid);
+    if (!group) return { ...jsonResult({ error: `pid ${pid} is not one of your Node/Bun/Deno processes.` }), isError: true };
+    if (group.isSelf) return { ...jsonResult({ error: 'Refusing: that group contains this MCP server or the agent calling it.' }), isError: true };
+    const results = paused ? scanner.pauseGroup(group) : scanner.resumeGroup(group);
+    const failed = results.filter((r) => !r.ok);
+    return { ...jsonResult({ group: summarise(group), action: paused ? 'paused' : 'resumed', failed }), isError: failed.length > 0 };
+  }
+);
+
 async function main() {
   await server.connect(new StdioServerTransport());
 }

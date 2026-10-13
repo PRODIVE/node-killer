@@ -534,6 +534,18 @@ ipcMain.handle('panel:kill-group', async (_event, rootPid) => {
   return { ok: failed.length === 0, failed };
 });
 
+ipcMain.handle('panel:set-paused', async (_event, rootPid, paused) => {
+  const groups = await scanProcessListeners();
+  const group = groups.find((g) => g.rootPid === Number(rootPid));
+  if (group) {
+    const results = paused ? scanner.pauseGroup(group) : scanner.resumeGroup(group);
+    const failed = results.filter((r) => !r.ok);
+    if (failed.length) notify(paused ? '❌ Could not pause' : '❌ Could not resume', failed.map((r) => `${r.pid} ${r.error || r.step}`).join(', '));
+  }
+  await performRefresh();
+  scheduleNextRefresh();
+});
+
 ipcMain.handle('panel:reveal', async (_event, folder) => {
   if (typeof folder === 'string' && folder.startsWith('/')) await shell.openPath(folder);
 });

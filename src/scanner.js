@@ -49,7 +49,7 @@ function parsePsColumns(stdout, fixedCols) {
 
 async function readProcessTable() {
   const [statsOut, argsOut] = await Promise.all([
-    execFileAsync('ps', ['-Axo', 'pid=,ppid=,pcpu=,rss=,etime=,user=,comm='], EXEC_OPTS),
+    execFileAsync('ps', ['-Axo', 'pid=,ppid=,pcpu=,rss=,etime=,user=,stat=,comm='], EXEC_OPTS),
     execFileAsync('ps', ['-Axo', 'pid=,args='], EXEC_OPTS),
   ]);
 
@@ -59,7 +59,7 @@ async function readProcessTable() {
   }
 
   const table = new Map();
-  for (const { fixed, rest } of parsePsColumns(statsOut.stdout, 6)) {
+  for (const { fixed, rest } of parsePsColumns(statsOut.stdout, 7)) {
     const pid = Number(fixed[0]);
     if (!Number.isFinite(pid)) continue;
     table.set(pid, {
@@ -69,6 +69,7 @@ async function readProcessTable() {
       rssKb: Number(fixed[3]) || 0,
       elapsed: fixed[4],
       user: fixed[5],
+      stopped: fixed[6].startsWith('T'), // SIGSTOP'd (paused)
       comm: rest,
       args: argsByPid.get(pid) || rest,
       children: [],
@@ -445,6 +446,7 @@ async function scan(options = {}) {
       user: root.user,
       command: root.args,
       isSelf: members.some((m) => protectedPids.has(m.pid)) || protectedPids.has(root.pid),
+      paused: runtimeMembers.length > 0 && runtimeMembers.every((m) => m.stopped),
       members: members
         .map((m) => ({
           pid: m.pid,
@@ -524,11 +526,40 @@ async function killPids(pids) {
   return pids.map((pid) => results.get(pid));
 }
 
+function signalAll(pids, signal) {
+  return pids.map((pid) => {
+    try {
+      process.kill(pid, signal);
+      return { pid, ok: true, step: signal };
+    } catch (err) {
+      return { pid, ok: err.code === 'ESRCH', step: signal, error: err.code === 'ESRCH' ? undefined : err.message };
+    }
+  });
+}
+
+/**
+ * Pause a group (SIGSTOP): it stops using CPU but keeps its memory. Whatever is waiting on it
+ * (an agent's test command, a browser hitting a dev server) waits too, until it is resumed.
+ * Root first so a wrapper can't react to its children stopping.
+ */
+function pauseGroup(group) {
+  if (group.isSelf) return [{ pid: group.rootPid, ok: false, step: 'refused', error: 'Group contains the caller or its parents' }];
+  return signalAll([group.rootPid, ...group.members.map((m) => m.pid).filter((p) => p !== group.rootPid)], 'SIGSTOP');
+}
+
+/** Resume a paused group (SIGCONT): workers first, then the root. */
+function resumeGroup(group) {
+  return signalAll([...group.members.map((m) => m.pid).filter((p) => p !== group.rootPid), group.rootPid], 'SIGCONT');
+}
+
 /** Kill a whole group: workers first, then the root, so wrappers don't respawn them. */
 async function killGroup(group) {
   if (group.isSelf) {
     return [{ pid: group.rootPid, ok: false, step: 'refused', error: 'Group contains the caller or its parents' }];
   }
+  // A paused process can't act on SIGTERM (or reap its dead workers); always wake the group first,
+  // since the caller's snapshot may predate a pause. SIGCONT is harmless to a running process.
+  resumeGroup(group);
   const pids = group.members.map((m) => m.pid).filter((pid) => pid !== group.rootPid);
   const workerResults = pids.length ? await killPids(pids) : [];
   const rootResult = await killPids([group.rootPid]);
@@ -541,6 +572,8 @@ module.exports = {
   killPid,
   killPids,
   killGroup,
+  pauseGroup,
+  resumeGroup,
   isPidAlive,
   // exported for tests
   describeTask,

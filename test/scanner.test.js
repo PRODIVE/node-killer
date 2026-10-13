@@ -46,6 +46,15 @@ test('scan groups workers under their parent, labels it, and killGroup kills the
     assert.ok(group.cpu > 0);
     assert.strictEqual(group.isSelf, false);
 
+    scanner.pauseGroup(group);
+    await sleep(400);
+    const paused = (await scanner.scan()).find((g) => g.rootPid === pid);
+    assert.strictEqual(paused.paused, true, 'group reported as paused');
+    scanner.resumeGroup(group);
+    await sleep(400);
+    assert.strictEqual((await scanner.scan()).find((g) => g.rootPid === pid).paused, false, 'resumed');
+    scanner.pauseGroup(group); // killGroup must still work on a paused group
+
     const results = await scanner.killGroup(group);
     assert.ok(results.every((r) => r.ok), JSON.stringify(results));
     for (const m of group.members) assert.strictEqual(scanner.isPidAlive(m.pid), false, `pid ${m.pid} dead`);

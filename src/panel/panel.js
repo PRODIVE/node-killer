@@ -318,6 +318,26 @@ function killButton(task) {
   );
 }
 
+function pauseButton(task) {
+  return el(
+    'button',
+    {
+      class: `pause${task.paused ? ' on' : ''}`,
+      disabled: task.isSelf,
+      title: task.paused
+        ? 'Resume: it carries on where it stopped'
+        : 'Pause: stops using CPU but keeps its memory. Anything waiting on it (an agent, a browser) waits too.',
+      'aria-label': task.paused ? `Resume ${task.title}` : `Pause ${task.title}`,
+      onclick: async (e) => {
+        e.stopPropagation();
+        e.currentTarget.disabled = true;
+        await api.setPaused(task.id, !task.paused);
+      },
+    },
+    task.paused ? '\u25B6\uFE0E' : '\u23F8\uFE0E'
+  );
+}
+
 function renderTask(task, machineCores) {
   const expanded = ui.expandedTasks.has(task.id);
   const row = el(
@@ -334,11 +354,11 @@ function renderTask(task, machineCores) {
           render();
         },
       },
-      el('div', { class: 'task-title' }, task.title, el('span', { class: 'app' }, task.app)),
+      el('div', { class: 'task-title' }, task.title, task.paused ? el('span', { class: 'paused-tag' }, 'Paused') : null, el('span', { class: 'app' }, task.app)),
       el('div', { class: 'task-detail' }, `${task.detail}${task.processCount > 1 ? ` · ${task.processCount} processes` : ''} · ${fmtMb(task.memoryMb)}`)
     ),
     el('div', { class: 'task-load' }, el('span', { class: 'cores' }, fmtCores(task.cores), el('small', {}, ' cores')), loadBar(task.cores, task.heat, machineCores)),
-    el('div', { class: 'task-actions' }, killButton(task))
+    el('div', { class: 'task-actions' }, pauseButton(task), killButton(task))
   );
   if (!expanded) return row;
   const members = el(

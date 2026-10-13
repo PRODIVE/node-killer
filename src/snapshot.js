@@ -78,6 +78,7 @@ function buildTree(groups) {
     }
     const cores = toCores(g.cpu);
     project.instances.get(iKey).tasks.push({
+      paused: Boolean(g.paused),
       id: g.rootPid,
       title: g.title,
       kind: g.kind,

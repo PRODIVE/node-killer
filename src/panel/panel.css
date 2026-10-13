@@ -175,7 +175,7 @@ h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-secondary);
 .instance-head .cores { font-size: 11px; min-width: 0; color: var(--text-secondary); }
 
 .task {
-  display: grid; grid-template-columns: 1fr 64px 70px; align-items: center; gap: 8px;
+  display: grid; grid-template-columns: 1fr 64px 96px; align-items: center; gap: 8px;
   padding: 5px 12px 5px 30px; position: relative;
 }
 .task:hover { background: var(--wash); }
@@ -189,7 +189,18 @@ h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-secondary);
 .task-detail { color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-load { display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
 .task-load .cores { font-size: 12px; min-width: 0; }
-.task-actions { display: flex; justify-content: flex-end; }
+.task-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.pause {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: 6px;
+  width: 26px; padding: 2px 0; font-size: 11px; color: var(--text-secondary);
+}
+.pause:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.pause.on { color: var(--text-primary); border-color: var(--text-secondary); }
+.pause:disabled { opacity: 0.4; cursor: default; }
+.paused-tag {
+  font-size: 10px; font-weight: 600; color: var(--text-primary);
+  background: var(--wash); border: 1px dashed var(--text-muted); border-radius: 4px; padding: 0 4px;
+}
 .kill {
   border: 1px solid var(--border); background: var(--surface-1); border-radius: 6px;
   padding: 2px 8px; font-size: 11px; color: var(--text-secondary); white-space: nowrap;
