@@ -27,6 +27,7 @@
 - **Labels each group** with the launching app (Terminal, VS Code, Claude Code, T3 Code, launchd…), the project, git worktree and sub-folder, and listening ports.
 - **Measured in cores, not percent**: "4.2 cores busy of 10". The menu bar shows a heat dot plus cores (🟢 light · 🟡 busy · 🟠 heavy · 🔴 hot).
 - **Memory and swap**: the panel shows memory in use, how much of it is Node, swap, and whether macOS is under memory pressure right now. The chart switches between Cores and Memory per project. The menu bar adds ⚠️ while the Mac is swapping. A frozen UI with spare cores is almost always memory, not CPU.
+- **Who's asking for permission**: when macOS asks “node would like to access your Desktop / Google Drive / Photos…”, Node Killer reads the privacy daemon's log to find the exact process and shows a notification naming the project and task, plus a Permission requests list in the panel. Cloud-drive prompts carry no pid, so those are marked “probably”. History is kept in `~/.node-killer/privacy-requests.json`.
 - **Click the menu bar item to open a panel** with a 10-minute stacked chart of cores by project (hover for values, or switch to the table), then project → instance (main checkout / worktree) → task cards. Tasks are named in plain English (Tests, Type check, Dev server, MCP server…) and colour-coded by load. Each task shows its processes when expanded and has Pause/Resume (SIGSTOP/SIGCONT: frees CPU, not memory) and a two-step Kill. Right-click the menu bar item for Refresh, Kill everything, Preferences and Quit.
 - To preview the panel in a browser, run `npm run panel:sample`, then serve the repo (e.g. `python3 -m http.server`) and open `dev/panel-harness.html`. `NODEKILLER_OPEN_PANEL=1 npm run dev` opens the panel on launch.
 
@@ -38,6 +39,7 @@
 |---|---|
 | `list_processes` | Groups sorted by CPU; filter with `min_cpu` / `query` (matches app, project, worktree, task) |
 | `get_process_group` | Every member of a group, with per-process CPU and command line |
+| `list_permission_requests` | Recent macOS permission prompts from Node and which project asked |
 | `pause_process_group` | Pause or resume a group (frees CPU, keeps memory) |
 | `kill_process_group` | SIGTERM → SIGKILL a whole group (or `only_this_pid`). It refuses to kill the agent calling it. |
 

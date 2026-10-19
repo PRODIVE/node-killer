@@ -13,6 +13,7 @@ const { z } = require('zod');
 const scanner = require('./scanner');
 const { heatOf, toCores, CORES } = require('./snapshot');
 const { readMemory } = require('./memory');
+const { readHistory } = require('./privacy');
 const pkg = require('../package.json');
 
 const server = new McpServer({ name: 'node-killer', version: pkg.version });
@@ -169,6 +170,24 @@ server.registerTool(
     const results = paused ? scanner.pauseGroup(group) : scanner.resumeGroup(group);
     const failed = results.filter((r) => !r.ok);
     return { ...jsonResult({ group: summarise(group), action: paused ? 'paused' : 'resumed', failed }), isError: failed.length > 0 };
+  }
+);
+
+server.registerTool(
+  'list_permission_requests',
+  {
+    title: 'macOS permission prompts from Node',
+    description:
+      'Recent macOS privacy prompts ("“node” would like to access your Desktop / Google Drive / Photos…") and which project and task ' +
+      'asked, as recorded by the Node Killer menu bar app (it must be running). `certain: false` means the process was inferred ' +
+      '(cloud-drive prompts carry no pid). Answering a prompt applies to every Node process, since they share one binary.',
+    inputSchema: { hours: z.number().positive().optional().describe('How far back to look (default 24).') },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ hours = 24 }) => {
+    const cutoff = Date.now() - hours * 3600 * 1000;
+    const entries = readHistory().filter((e) => Date.parse(e.time) >= cutoff);
+    return jsonResult({ count: entries.length, requests: entries });
   }
 );
 

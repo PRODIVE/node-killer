@@ -216,3 +216,21 @@ h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-secondary);
 
 .idle-toggle-row { text-align: center; margin: 8px 0 2px; }
 .empty { color: var(--text-muted); text-align: center; padding: 24px 0; }
+
+/* Permission requests */
+.privacy-card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px 8px; margin-bottom: 10px;
+}
+.privacy-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 0; border-top: 1px solid var(--grid); }
+.privacy-row:first-child { border-top: 0; }
+.privacy-what { font-weight: 600; }
+.privacy-who { color: var(--text-secondary); font-size: 12px; grid-column: 1; }
+.privacy-when { color: var(--text-muted); font-size: 11px; grid-column: 1; }
+.privacy-row .pill { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.outcome-waiting { --dot: var(--heat-busy); }
+.outcome-allowed { --dot: var(--heat-light); }
+.outcome-denied { --dot: var(--heat-hot); }
+.outcome-limited, .outcome-answered { --dot: var(--heat-idle); }
+.privacy-note { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); }
+.privacy-more { font-size: 11px; color: var(--text-muted); padding-top: 4px; }

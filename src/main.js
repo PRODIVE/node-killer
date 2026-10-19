@@ -6,6 +6,7 @@ const prefs = require('./prefs');
 const scanner = require('./scanner');
 const { buildSnapshot, History } = require('./snapshot');
 const { readMemory } = require('./memory');
+const { PrivacyWatcher } = require('./privacy');
 const { REFRESH_CHOICES, DEFAULT_REFRESH_MS } = prefs;
 
 /**
@@ -25,6 +26,26 @@ let prefsWindow = null;
 let panelWindow = null;
 let latestSnapshot = null;
 const history = new History();
+
+// pid → who it is, kept for a while after the process exits, so a permission prompt from a
+// short-lived process (an agent's subprocess, a test run) can still be named.
+const PID_LABEL_TTL_MS = 30 * 60 * 1000;
+const pidLabels = new Map();
+
+function rememberPidLabels(groups) {
+  const now = Date.now();
+  for (const g of groups) {
+    const info = { label: scanner.projectLabel(g), title: g.title, app: g.app, seen: now };
+    for (const m of g.members) pidLabels.set(m.pid, info);
+    pidLabels.set(g.rootPid, info);
+  }
+  for (const [pid, info] of pidLabels) if (now - info.seen > PID_LABEL_TTL_MS) pidLabels.delete(pid);
+}
+
+const privacy = new PrivacyWatcher((pid) => {
+  const info = pidLabels.get(pid);
+  return info ? { label: info.label, title: info.title, app: info.app } : null;
+});
 
 const isMac = process.platform === 'darwin';
 
@@ -199,7 +220,7 @@ function isPanelVisible() {
 
 function sendSnapshot() {
   if (!latestSnapshot || !panelWindow || panelWindow.isDestroyed()) return;
-  panelWindow.webContents.send('panel:snapshot', { ...latestSnapshot, colorSlots: prefs.getColorSlots() });
+  panelWindow.webContents.send('panel:snapshot', { ...latestSnapshot, colorSlots: prefs.getColorSlots(), privacy: privacy.recent() });
 }
 
 function buildContextMenu() {
@@ -252,6 +273,7 @@ async function killEverything() {
 
 function applySnapshot(groups, memory) {
   latestProcesses = Array.isArray(groups) ? groups : [];
+  rememberPidLabels(latestProcesses);
   latestSnapshot = buildSnapshot(latestProcesses, history, memory);
   prefs.assignColorSlots(latestSnapshot.projects.filter((p) => p.cores >= 0.05).map((p) => p.key));
   applyDisplayMode();
@@ -587,6 +609,14 @@ app.whenReady().then(async () => {
   }
 
   createTray();
+  // Name the Node process behind each macOS permission prompt ("“node” would like to access…").
+  privacy.on('prompt', (e) => {
+    const who = `${e.label}${e.title ? ` · ${e.title}` : ''}${e.via ? ` (via ${e.via})` : ''}`;
+    notify(`🔒 “${e.binary}” wants: ${e.what}`, e.certain ? `It's ${who}` : `Probably ${who}`);
+    sendSnapshot();
+  });
+  privacy.on('change', () => sendSnapshot());
+  privacy.start();
   applyAutoLaunchSetting(prefs.getAutoLaunch());
   await performRefresh();
   scheduleNextRefresh();
@@ -603,6 +633,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+  privacy.stop();
   isQuitting = true;
   if (refreshTimeout) clearTimeout(refreshTimeout);
 });

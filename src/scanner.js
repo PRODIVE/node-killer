@@ -265,6 +265,8 @@ function describeTask(args) {
 
 // First match wins. Tested against the full command lines of every member.
 const KINDS = [
+  // Agent SDK hosts spawn the Claude Code binary; its arguments mention all sorts (tests, typecheck…).
+  { kind: 'agents', title: 'Claude agents', re: /claude-agent-sdk|@anthropic-ai\/claude-code|\/claude --output-format/ },
   { kind: 'tests', title: 'Tests', re: /\b(vitest|jest|mocha|ava|playwright|cypress)\b|\brun test\b/ },
   { kind: 'typecheck', title: 'Type check', re: /\b(tsc|vue-tsc|tsgo)\b(?!-)|typecheck|type-check/ },
   { kind: 'mcp', title: 'MCP server', re: /\bmcp\b|mcp-server|modelcontextprotocol|server-[a-z]+-mcp/i },

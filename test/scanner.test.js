@@ -93,3 +93,14 @@ test('memory parsers read vm_stat and swapusage', () => {
   assert.deepStrictEqual([vm.pageSize, vm.active, vm.wired, vm.compressor, vm.swapouts], [16384, 100, 50, 25, 7]);
   assert.deepStrictEqual(parseSwapUsage('total = 10240.00M  used = 9333.19M  free = 906.81M  (encrypted)'), { totalGb: 10, usedGb: 9333.19 / 1024 });
 });
+
+test('privacy parser reads tccd prompt, attribution and result lines', () => {
+  const { parseMessage } = require('../src/privacy');
+  const prompt = parseMessage('AUTHREQ_PROMPTING: msgID=91117.49840, service=kTCCServiceSystemPolicyDesktopFolder, subject=Sub:{/opt/homebrew/bin/node}Resp:{TCCDProcess: identifier=node-55, pid=62055, auid=501, euid=501, responsible_path=/opt/homebrew/Cellar/node/25.6.0/bin/node, binary_path=/opt/homebrew/Cellar/node/25.6.0/bin/node},');
+  assert.deepStrictEqual([prompt.kind, prompt.service, prompt.responsible.pid], ['prompting', 'kTCCServiceSystemPolicyDesktopFolder', 62055]);
+  const attr = parseMessage('AUTHREQ_ATTRIBUTION: msgID=1.2, attribution={responsible={TCCDProcess: identifier=node-55, pid=62055, auid=501, euid=501, responsible_path=/x/bin/node, binary_path=/x/bin/node}, accessing={TCCDProcess: identifier=com.anthropic.claude-code, pid=72091, auid=501, euid=501, binary_path=/x/claude}, requesting={TCCDProcess: identifier=com.apple.sandboxd, pid=91117, auid=0, euid=0, binary_path=/usr/libexec/sandboxd}, },');
+  assert.deepStrictEqual([attr.responsible.pid, attr.accessing.identifier, attr.accessing.pid], [62055, 'com.anthropic.claude-code', 72091]);
+  assert.deepStrictEqual(parseMessage('AUTHREQ_RESULT: msgID=1.2, authValue=0, authReason=2,'), { kind: 'result', msgId: '1.2', authValue: 0 });
+  const fp = parseMessage('Publishing <TCCDEvent: type=Create, service=kTCCServiceFileProviderDomain, identifier_type=Path, identifier=/opt/homebrew/Cellar/node/25.6.0/bin/node> to 3 subscribers: {');
+  assert.strictEqual(fp.kind, 'fileprovider');
+});

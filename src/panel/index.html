@@ -24,6 +24,14 @@
         <button class="icon-btn" id="menuBtn" title="Refresh, preferences, quit" aria-label="Menu">⋯</button>
       </header>
 
+      <section class="privacy-card" id="privacy" aria-labelledby="privacyTitle" hidden>
+        <div class="chart-head">
+          <h2 id="privacyTitle">Permission requests from Node, last 24 hours</h2>
+        </div>
+        <div id="privacyList"></div>
+        <p class="privacy-note">macOS names the program (“node”), and every Node process is the same program, so whatever you answer applies to all of them.</p>
+      </section>
+
       <section class="chart-card" aria-labelledby="chartTitle">
         <div class="chart-head">
           <h2 id="chartTitle">Cores used, last 10 minutes</h2>

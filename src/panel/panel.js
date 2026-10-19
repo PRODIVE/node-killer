@@ -449,10 +449,60 @@ function renderProjects(s) {
   $('#idleToggle').textContent = ui.showIdle ? 'Hide idle' : `Show idle (${idleCount} project${idleCount === 1 ? '' : 's'})`;
 }
 
+const OUTCOME_LABELS = { waiting: 'Waiting for you', allowed: 'Allowed', denied: "Don't allow", limited: 'Limited', answered: 'Answered' };
+const PRIVACY_SHOWN = 4;
+
+function timeAgo(iso) {
+  const secs = Math.round((Date.now() - Date.parse(iso)) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)} min ago`;
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function renderPrivacy(s) {
+  const entries = s.privacy || [];
+  $('#privacy').hidden = entries.length === 0;
+  if (!entries.length) return;
+  // The same request shown twice (macOS re-asks) collapses into its latest row.
+  const rows = entries.slice(0, ui.showAllPrivacy ? entries.length : PRIVACY_SHOWN).map((e) =>
+    el(
+      'div',
+      { class: 'privacy-row' },
+      el('div', { class: 'privacy-what' }, `“${e.binary}” wanted: ${e.what}`),
+      el(
+        'div',
+        { class: 'privacy-who' },
+        e.certain ? '' : 'Probably ',
+        el('strong', {}, e.label || 'unknown'),
+        e.title ? ` · ${e.title}` : '',
+        e.via ? ` · via ${e.via}` : ''
+      ),
+      el('div', { class: 'privacy-when' }, `${timeAgo(e.time)}${e.pid ? ` · pid ${e.pid}` : ''}`),
+      el('span', { class: `pill outcome-${e.outcome}` }, OUTCOME_LABELS[e.outcome] || e.outcome)
+    )
+  );
+  const more =
+    entries.length > PRIVACY_SHOWN
+      ? el(
+          'button',
+          {
+            class: 'link-btn privacy-more',
+            onclick: () => {
+              ui.showAllPrivacy = !ui.showAllPrivacy;
+              render();
+            },
+          },
+          ui.showAllPrivacy ? 'Show fewer' : `Show all ${entries.length}`
+        )
+      : null;
+  $('#privacyList').replaceChildren(...rows, more || '');
+}
+
 function render() {
   const s = ui.snapshot;
   if (!s) return;
   renderHero(s);
+  renderPrivacy(s);
   renderChart(s);
   renderProjects(s);
 }
